@@ -1,0 +1,355 @@
+---
+title: 'BISC 307, Lab 4: Remote sensing'
+author: "Prof. Jackie Hatala Matthes, FA 2020"
+date: 'Lab: 19-20 November 2020'
+output:
+  html_document: default
+---
+
+### Lab 4 Objectives
+1. Load and plot raster data.
+2. Understand and reproject coordinate reference systems.
+3. Use a csv file with location data to create a spatial map.
+4. Use points (vector data) to extract values from pixels in a raster object.
+
+### 1. Introduction
+In this lab, we'll work with spatial raster and vector datasets from the Harvard Forest NEON site to assess canopy height from airborne Lidar remotely sensed imagery. We will work through core concepts and considerations for spatial data in R.
+
+First, we'll load the geospatial and tidyverse libraries that we need for this lab. 
+
+```{r, results = FALSE, warning=FALSE, message=FALSE}
+# Load libraries
+library(raster)
+library(rgdal)
+library(ggplot2)
+library(dplyr)
+library(sf)
+
+```
+
+
+### 2. Plotting a raster 
+
+We start by working with a series of GeoTIFF files in this lab, which contains a set of embedded tags with metadata about the raster data. We'll start with a raster of data for the ground surface height (called a digital terrain model or DTM) at Harvard Forest in central MA. We can use the function `GDALinfo()` to get information about our raster data before we read that data into R. It is ideal to do this before importing your data.
+
+```{r}
+# Look at metadata before loading
+GDALinfo("data/NEON-DS-Airborne-Remote-Sensing/HARV/DTM/HARV_dtmCrop.tif")
+```
+
+Now that we’ve previewed the metadata for our GeoTIFF, let’s import this raster dataset into R and explore its metadata more closely using the `raster()` function.
+
+```{r}
+# Import DTM data & convert to data frame
+DTM_HARV <- raster("data/NEON-DS-Airborne-Remote-Sensing/HARV/DTM/HARV_dtmCrop.tif")
+
+# Look at raster object: shows resolution (size of a pixel), extent
+# coordinate reference system (CRS), names (the variable in the cells)
+DTM_HARV
+
+# Look at summary stats for ground elevation
+summary(DTM_HARV)
+```
+
+To visualise this data in R using `ggplot2`, we need to convert it to a data frame using the `as.data.frame()` function from the `raster` package. Then we can use `ggplot()` to plot these data. We will set the color scale to `scale_fill_viridis_c` which is a color-blindness-friendly color scale. We will also use the `coord_quickmap()` function to use an approximate Mercator projection for our plots. This approximation is suitable for small areas that are not too close to the poles. Other coordinate systems are available in ggplot2 if needed, you can learn about them at their help page `?coord_map`.
+
+```{r}
+# Convert DTM from a raster to a data frame
+DTM_HARV_df <- as.data.frame(DTM_HARV, xy = TRUE)
+
+# Look at snapshot of data frame version
+head(DTM_HARV_df)
+
+# Plot HARV digital terrain model (ground elevation) raster 
+# Here we fill with HARV_dtmCrop, because this is what we see for 'names' variable
+ggplot(data = DTM_HARV_df ) +
+    geom_raster(aes(x = x, y = y, fill = HARV_dtmCrop)) +
+    scale_fill_viridis_c() +
+    coord_quickmap()
+```
+This map shows the surface level elevation of our study site in Harvard Forest. From the legend, we can see that the maximum elevation is ~400, but we can’t tell whether this is 400 feet or 400 meters because the legend doesn’t show us the units. We can look at the metadata of our object to see what the units are. Much of the metadata that we’re interested in is part of the coordinate reference system (CRS). 
+
+### 3. Interpreting the CRS in Proj4 format
+
+We can view the CRS string associated with our R object using the `crs()` function.
+
+```{r}
+# Check CRS for the HARV ground elevation DTM 
+crs(DTM_HARV)
+```
+
+The CRS for our data is given to us by R in `proj4` format. Let’s break down the pieces of `proj4` string. The string contains all of the individual CRS elements that R or another GIS might need. Each element is specified with a + sign, similar to how a .csv file is delimited or broken up by a ,. After each + we see the CRS element being defined. For example projection (`proj=`) and datum (`datum=`).
+
+Our projection string for DSM_HARV specifies the UTM projection as follows:
+
+`+proj=utm +zone=18 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0`
+
+* **proj=utm**: the projection is UTM, UTM has several zones
+* **zone=18**: the zone is 18
+* **datum=WGS84**: the datum is WGS84 (the datum refers to the 0,0 reference for the coordinate system used in the projection)
+* **units=m**: the units for the coordinates are in meters
+* **ellps=WGS84**: the ellipsoid (how the earth’s roundness is calculated) for the data is WGS84
+
+### 3. Missing Data & Bad Data Values
+
+Raster data also often has a `NoDataValue` associated with it. This is a value assigned to pixels where data is missing or no data were collected. The value that is conventionally used to take note of missing data (the `NoDataValue` value) varies by the raster data type. For integers, -9999 is common. In some cases, other `NA` values may be more appropriate. An `NA` value should be a) outside the range of valid values, and b) a value that fits the data type in use. 
+
+If we are lucky, our GeoTIFF file has a tag that tells us what is the `NoDataValue`. If we are less lucky, we can find that information in the raster’s metadata. If a `NoDataValue` was stored in the GeoTIFF tag, when R opens up the raster, it will assign each instance of the value to NA. Values of NA will be ignored by R as demonstrated above.
+
+We can use the output from the `GDALinfo()` function to find out what `NoDataValue` is used for our `DTM_HARV` dataset: 
+```{r}
+# Check NoDataValue for DTM raster
+GDALinfo("data/NEON-DS-Airborne-Remote-Sensing/HARV/DTM/HARV_dtmCrop.tif")
+```
+
+Bad data values are different from `NoDataValues`. Bad data values are values that fall outside of the applicable range of a dataset. Sometimes, we need to use some common sense and scientific insight as we examine the data - just as we would for field data to identify questionable values.
+
+Plotting data with appropriate highlighting can help reveal patterns in bad values and may suggest a solution. Here, we can create a histogram to see the distribution of values in our data, which can help to identify bad values:
+
+```{r}
+# Histogram of HARV DTM raster values
+ggplot(data = DTM_HARV_df) +
+    geom_histogram(aes(HARV_dtmCrop))
+```
+
+***
+**Code Challenge 1:**
+Use `GDALinfo()` to determine the following about the `NEON-DS-Airborne-Remote-Sensing/HARV/DSM/HARV_DSMhill.tif` file:
+
+* Does this file have the same CRS as DSM_HARV?
+* What is the `NoDataValue`?
+* What is resolution of the raster data?
+* How large would a 5x5 pixel area be on the Earth’s surface?
+* Is the file a multi- or single-band raster?
+
+***
+
+### 4. Layering rasters & reprojecting
+
+We can layer a raster on top of a hillshade raster for the same area, and use a transparency factor to create a fancy 3-dimensional effect. A hillshade is a raster that maps the shadows and texture that you would see from above when viewing terrain. 
+
+But before we do that, we'll need to load the hillshade data and check to make sure that the CRS projection matches that of the DTM, otherwise they won't be able to be plotted together.
+
+First we need to read in our DTM hillshade data and view the structure:
+```{r}
+# Load hillshade raster
+DTM_hill_HARV <-
+  raster("data/NEON-DS-Airborne-Remote-Sensing/HARV/DTM/HARV_DTMhill_WGS84.tif")
+
+# Check CRS of the hillshade raster
+crs(DTM_hill_HARV)
+
+# Does it match the CRS of the DTM data
+crs(DTM_HARV)
+```
+Nooooo! The projection for the DTM is in UTM zone 18N, but the hillshade raster is in longlat (longitude/latitude WGS84). We'll need to convert the projection of the hillshade raster to plot these together. 
+
+We can use the `projectRaster()` function to reproject a raster into a new CRS. Keep in mind that reprojection only works when you first have a defined CRS for the raster object that you want to reproject. It cannot be used if no CRS is defined. Lucky for us, the `DTM_hill_HARV` has a defined CRS, even if the wrong one.
+
+To use the `projectRaster()` function, we need to define two things: 1) the object we want to reproject, and 2) the CRS that we want to reproject it to. The syntax is: `projectRaster(RasterObject, crs = CRSToReprojectTo)`
+
+Within the `projectRaster()` function we can assign the CRS of our `DTM_HARV` as follows: `crs = crs(DTM_HARV)`. Note that we are using the `projectRaster()` function on the raster object, not the `data.frame()` we use for plotting with ggplot.
+
+First we will reproject our `DTM_hill_HARV` raster data to match the `DTM_HARV` raster CRS:
+```{r}
+# Reproject hillshade raster to DTM_HARV crs
+DTM_hill_UTMZ18N_HARV <- projectRaster(DTM_hill_HARV,
+                                       crs = crs(DTM_HARV))
+# Check new crs
+crs(DTM_hill_UTMZ18N_HARV)
+```
+
+We can also check the resolution of our reprojected raster, and we can recalculate the resolution for 1m grid cells (it's close, but not quite 1m):
+```{r}
+# Check original resolution
+res(DTM_hill_UTMZ18N_HARV)
+
+# Reproject original raster and constrain to 1m resolution
+DTM_hill_UTMZ18N_HARV <- projectRaster(DTM_hill_HARV,
+                                  crs = crs(DTM_HARV),
+                                  res = 1)
+```
+
+Now we can layer another raster on top of our hillshade by adding another call to the `geom_raster()` function. Let’s overlay `DSM_HARV` on top of the `hill_HARV`.
+
+```{r}
+# Convert to data frame
+DTM_hill_HARV_df <- as.data.frame(DTM_hill_UTMZ18N_HARV, xy = TRUE) 
+
+# Plot just the hillshade data
+ggplot(data = DTM_hill_HARV_df) +
+  geom_raster(aes(x = x, y = y, alpha = HARV_DTMhill_WGS84)) + 
+  scale_alpha(range =  c(0.15, 0.65), guide = "none") + 
+  coord_quickmap()
+```
+
+And finally, we can plot the ground elevation and hillshade together on the same plot:
+```{r}
+# Plot DTM ground elevation and hillshade together
+ggplot(data = DTM_HARV_df) +
+  geom_raster(aes(x = x, y = y, 
+                  fill = HARV_dtmCrop)) + 
+  geom_raster(data = DTM_hill_HARV_df, 
+              aes(x = x, y = y, 
+                  alpha = HARV_DTMhill_WGS84)) +  
+  scale_fill_viridis_c() +  
+  scale_alpha(range = c(0.15, 0.65), guide = "none") +  
+  ggtitle("Elevation with hillshade") +
+  coord_quickmap()
+```
+
+### 5. Raster Calculations
+
+The DTM includes data for the ground surface elevation. Within the data/ folder there is also digital surface model (DSM) data, which is collected by an airborne sensor that measures the very top of each object on the land surface (whether a treetop, pavement, roof, etc.). Both of these datasets were collected by the NEON airborne lidar sensor that you watched a video about for your PreLab. 
+
+We will calculate the difference between these two lidar-derived rasters (DSM minus DTM) as a canopy height model (CHM) that represents the height of vegetation at Harvard Forest. 
+
+We can calculate the difference between two rasters in two different ways:
+
+1. directly subtracting the two rasters in R using raster math
+2. using the `overlay()` function for more efficient processing - particularly if our rasters are large and/or the calculations are complex
+
+```{r}
+# Import the DSM data and check the projection
+DSM_HARV <- raster("data/NEON-DS-Airborne-Remote-Sensing/HARV/DSM/HARV_dsmCrop.tif")
+crs(DSM_HARV)
+
+# Raster math: subtract DTM (ground level) from DSM (elevation of objects)
+CHM_HARV <- DSM_HARV - DTM_HARV
+
+# Change to data frame for plotting
+CHM_HARV_df <- as.data.frame(CHM_HARV, xy = TRUE)
+
+# Plot the new output canopy height model
+ggplot(data = CHM_HARV_df) +
+   geom_raster(aes(x = x, y = y, fill = layer)) + 
+   scale_fill_gradientn(name = "Canopy Height (m)", colors = terrain.colors(10)) + 
+   coord_quickmap()
+```
+
+We can look at a distribution of values in the canopy height model to get a sense of the range of canopy heights at this site: 
+```{r}
+# Plot histogram of Harvard Forest canopy height
+ggplot(CHM_HARV_df) +
+    geom_histogram(aes(layer))
+```
+And we could have equivalently done this raster math with the `overlay()` function, which takes two or more rasters and applies a function to them. The syntax is: `outputRaster <- overlay(raster1, raster2, fun=functionName)`
+
+```{r}
+# Use overlay for raster subtraction
+CHM_ov_HARV <- overlay(DSM_HARV,
+                       DTM_HARV,
+                       fun = function(r1, r2) { return( r1 - r2) })
+
+# Convert to data frame
+CHM_ov_HARV_df <- as.data.frame(CHM_ov_HARV, xy = TRUE)
+
+# Plot the canopy height model for Harvard Forest
+ggplot(data = CHM_ov_HARV_df) +
+  geom_raster(aes(x = x, y = y, fill = layer)) + 
+  scale_fill_gradientn(name = "Canopy Height", colors = terrain.colors(10)) + 
+  coord_quickmap()
+```
+
+Now that we’ve created a new raster, we could also export the data as a GeoTIFF file using the `writeRaster()` function. This would save us from having to do these processing steps each time, which is helpful for rasters that are large. When we write this raster object to a GeoTIFF file we’ll name it `CHM_HARV.tiff`. The `writeRaster()` function by default writes the output file to your working directory unless you specify a full file path.
+
+We will specify the output format (`"GTiff"`), the missing data value (`NAflag = -9999`). We will also tell R to overwrite any data that is already in a file of the same name.
+
+```{r}
+# Export Harvard Forest Canopy height model raster
+writeRaster(CHM_ov_HARV, "CHM_HARV.tiff",
+            format="GTiff",
+            overwrite=TRUE,
+            NAflag=-9999)
+```
+
+### 6. Importing and plotting spatial vector data from a csv file
+Now we will use the `sf` package to work with vector data in R. Today we will only work with point vector data, next week we will work with shapefiles.
+
+Here we will import spatial points stored in .csv (Comma Separated Value) format into R as an `sf` spatial object. The `HARV_PlotLocations.csv` file contains x, y point locations for study plots where NEON collects data on vegetation and other ecological metrics. If a text data file has associated x and y location columns, then we can convert it into an `sf` spatial object. The `sf` object allows us to store both the x,y values that represent the coordinate location of each point and the associated attribute data (columns) describing each feature in the spatial object.
+
+Let’s import a .csv file that contains plot coordinate x, y locations at the NEON Harvard Forest Field Site (`HARV_PlotLocations.csv`). 
+
+```{r}
+# Import HARV NEON plot locations
+plot_locations_HARV <-
+  read.csv("data/NEON-DS-Site-Layout-Files/HARV/HARV_PlotLocations.csv")
+plot_locations_HARV
+```
+To convert the data to an `sf` object, we'll need to specify x,y columns and the coordinate reference system (crs) for these data. 
+
+Looking at the `plot_locations_HARV` data frame, we can see that `easting` is the x-bearing, `northing` is the y-bearing, `geodeticDa` is the coordinate reference `WGS84`, and `utmZone` defines `UTM 18N` as the projection. Now we can use the `proj4string` format to define the crs for our data frame: 
+
+```{r}
+# Define UTM 18N WGS84 proj4string
+utm18nCRS <- "+proj=utm +zone=18 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+```
+
+Next, let’s convert our dataframe into an `sf` object. To do this, we need to specify:
+
+* The columns containing X (easting) and Y (northing) coordinate values
+* The CRS that the column coordinate represent (units are included in the CRS) - stored in our utmCRS object.
+We will use the `st_as_sf()` function to perform the conversion, and then plot the NEON plot locations on top of the canopy height model raster.
+
+```{r}
+# Convert data frame to sf object
+plot_locations_sp_HARV <- st_as_sf(plot_locations_HARV, coords = c("easting", "northing"), crs = utm18nCRS)
+
+plot_locations_sp_HARV
+
+# Plot the plot locations
+ggplot(data = plot_locations_sp_HARV) +
+  geom_sf() +
+  ggtitle("Map of Plot Locations")
+
+# Plot the plot locations on canopy height model
+ggplot(data = CHM_ov_HARV_df) +
+  geom_raster(aes(x = x, y = y, fill = layer)) + 
+  geom_sf(data = plot_locations_sp_HARV) +
+  scale_fill_gradientn(name = "Canopy Height", colors = terrain.colors(10)) + 
+  coord_sf()
+
+```
+
+### 8. Extract raster values at points
+Often we want to extract pixel values from a raster layer for particular locations - for example, plot locations that we are sampling on the ground.
+
+We can extract pixel values by defining a buffer or area surrounding individual NEON plot point locations using the `extract()` function. To do this we define the summary argument (`fun = mean`) and the buffer distance (`buffer = 20`) which represents the radius of a circular region around each point. By default, the units of the buffer are the same units as the data’s CRS. All pixels that are touched by the buffer region are included in the extract.
+
+Let’s put this into practice by figuring out the mean tree height in the 20m around each of the NEON forest plots (`plot_locations_sp_HARV`). We will use the `df = TRUE` argument to return a data frame.
+
+```{r}
+# Extract tree heights at HARV NEON forest plots with 20m buffer
+mean_treeHt_plots <- extract(x = CHM_HARV,
+                                  y = plot_locations_sp_HARV,
+                                  buffer = 20,
+                                  fun = mean, 
+                                  df = TRUE)
+# Look at NEON plot tree heights
+mean_treeHt_plots
+
+# Rejoin tree height data to the NEON plots data frame
+plot_locations_sp_HARV <- mutate(plot_locations_sp_HARV, 
+                                 treeHt_mean = mean_treeHt_plots$layer)
+
+# Look at edited NEON plots data frame with tree height column
+plot_locations_sp_HARV
+```
+
+Once we extract the raster values at points and reattach it to the data frame, we can use any of the tidying, grouping, and summarizing functions from the tidyverse to further summarize these canopy height data.
+
+***
+**LAB REPORT INSTRUCTIONS:**
+
+* For your Lab 4 Report, you can investigate a question/hypothesis related to the  dataset. Within the data/ folder, there is also imagery and NEON plot location data for the [SJER NEON site](https://www.neonscience.org/field-sites/field-sites-map/SJER), the San Joaquin Experimental Range in California. You may use either just the Harvard Forest data, just the SJER site, or a comparison of both sites to formulate/answer your research question. 
+
+* As you structure your data analysis to answer your question, produce an .Rmd file pretending that you are starting from scratch (i.e., don't assume that you have anything loaded from doing the lab exercise). The goal is to be able to hand someone your code and be able to have them re-run your analysis to see what you did and how - this is reproducible research! 
+
+* You should `Commit` and `Push` your Rmd file containing your R code and the integrated text for the Lab 4 Report following the Lab Report Guidelines. 
+
+* Your Lab 4 Report document must include at least one map.
+
+***
+
+
+
