@@ -170,7 +170,7 @@ DTM_hill_UTMZ18N_HARV <- projectRaster(DTM_hill_HARV,
                                   res = 1)
 ```
 
-Now we can layer another raster on top of our hillshade by adding another call to the `geom_raster()` function. Let’s overlay `DSM_HARV` on top of the `hill_HARV`.
+Now we can layer another raster on top of our hillshade by adding another call to the `geom_raster()` function. Let’s overlay `DTM_HARV` on top of the `hill_HARV`.
 
 ```{r}
 # Convert to data frame
@@ -251,6 +251,12 @@ ggplot(data = CHM_ov_HARV_df) +
   coord_quickmap()
 ```
 
+***
+**Code Challenge 2:**
+Within your group, discuss the results from the Harvard Forest canopy height map. Where are there areas of tall tree canopies? Which part of the map might have the highest rates of photosynthesis? What are the units of the x and y axes? 
+
+***
+
 Now that we’ve created a new raster, we could also export the data as a GeoTIFF file using the `writeRaster()` function. This would save us from having to do these processing steps each time, which is helpful for rasters that are large. When we write this raster object to a GeoTIFF file we’ll name it `CHM_HARV.tiff`. The `writeRaster()` function by default writes the output file to your working directory unless you specify a full file path.
 
 We will specify the output format (`"GTiff"`), the missing data value (`NAflag = -9999`). We will also tell R to overwrite any data that is already in a file of the same name.
@@ -263,8 +269,8 @@ writeRaster(CHM_ov_HARV, "CHM_HARV.tiff",
             NAflag=-9999)
 ```
 
-### 6. Importing and plotting spatial vector data from a csv file
-Now we will use the `sf` package to work with vector data in R. Today we will only work with point vector data, next week we will work with shapefiles.
+### 6. Importing and plotting spatial point data from a csv file
+Now we will use the `sf` package to work with vector data in R. Today we will  work with point vector data, which is common if you collect field data at points and then want to connect those data to remotely sensed imagery.
 
 Here we will import spatial points stored in .csv (Comma Separated Value) format into R as an `sf` spatial object. The `HARV_PlotLocations.csv` file contains x, y point locations for study plots where NEON collects data on vegetation and other ecological metrics. If a text data file has associated x and y location columns, then we can convert it into an `sf` spatial object. The `sf` object allows us to store both the x,y values that represent the coordinate location of each point and the associated attribute data (columns) describing each feature in the spatial object.
 
@@ -272,8 +278,7 @@ Let’s import a .csv file that contains plot coordinate x, y locations at the N
 
 ```{r}
 # Import HARV NEON plot locations
-plot_locations_HARV <-
-  read.csv("data/NEON-DS-Site-Layout-Files/HARV/HARV_PlotLocations.csv")
+plot_locations_HARV <- read.csv("data/HARV_PlotLocations.csv")
 plot_locations_HARV
 ```
 To convert the data to an `sf` object, we'll need to specify x,y columns and the coordinate reference system (crs) for these data. 
@@ -339,11 +344,17 @@ plot_locations_sp_HARV
 Once we extract the raster values at points and reattach it to the data frame, we can use any of the tidying, grouping, and summarizing functions from the tidyverse to further summarize these canopy height data.
 
 ***
+**Code Challenge 3:**
+Within your group, discuss the analysis steps that you would use to summarize the canopy height data the plot locations to get the mean and standard deviation among plots. 
+
+***
+
+***
 **LAB REPORT INSTRUCTIONS:**
 
-* For your Lab 4 Report, you can investigate a question/hypothesis related to the  dataset. Within the data/ folder, there is also imagery and NEON plot location data for the [SJER NEON site](https://www.neonscience.org/field-sites/field-sites-map/SJER), the San Joaquin Experimental Range in California. You may use either just the Harvard Forest data, just the SJER site, or a comparison of both sites to formulate/answer your research question. 
+* For your Lab 4 Report, you will compare the distribution of canopy heights at Harvard Forest and the [SJER NEON site](https://www.neonscience.org/field-sites/field-sites-map/SJER), the San Joaquin Experimental Range in California. Within the data/ folder, you will find an SJER folder with imagery and NEON plot location data for this site. In your lab report, you can use summary statistics and histograms to compare the distrubtion of tree heights at the two sites, which can give insight into similarities and differences in the structure of vegetation. 
 
-* As you structure your data analysis to answer your question, produce an .Rmd file pretending that you are starting from scratch (i.e., don't assume that you have anything loaded from doing the lab exercise). The goal is to be able to hand someone your code and be able to have them re-run your analysis to see what you did and how - this is reproducible research! 
+* As you structure your data analysis, produce an .Rmd file pretending that you are starting from scratch (i.e., don't assume that you have anything loaded from doing the lab exercise). The goal is to be able to hand someone your code and be able to have them re-run your analysis to see what you did and how - this is reproducible research! 
 
 * You should `Commit` and `Push` your Rmd file containing your R code and the integrated text for the Lab 4 Report following the Lab Report Guidelines. 
 
