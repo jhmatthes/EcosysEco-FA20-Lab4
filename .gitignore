@@ -2,7 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
-*.zip
+2009586.zip
 .DS_Store
+data/
 extras.R
 CHM_HARV.tif
