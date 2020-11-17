@@ -2,7 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
-2009586.zip
+*.zip
+data/
 .DS_Store
 data/
 extras.R
