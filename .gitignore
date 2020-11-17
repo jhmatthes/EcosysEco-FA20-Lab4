@@ -4,6 +4,6 @@
 .Ruserdata
 *.zip
 .DS_Store
-data/
+data/*
 extras.R
 CHM_HARV.tif
